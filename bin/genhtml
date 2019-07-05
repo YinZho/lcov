@@ -299,7 +299,7 @@ our @funcview_sortlist;
 our @rate_name = ("Lo", "Med", "Hi");
 our @rate_png = ("ruby.png", "amber.png", "emerald.png");
 our $lcov_func_coverage = 1;
-our $lcov_branch_coverage = 0;
+our $lcov_branch_coverage = 1;
 our $rc_desc_html = 0;	# lcovrc: genhtml_desc_html
 
 our $cwd = cwd();	# Current working directory
@@ -3269,7 +3269,7 @@ sub write_css_file()
 	td.lineCov,
 	span.lineCov
 	{
-	  background-color: #CAD7FE;
+	  background-color: #97f295;
 	}
 	
 	/* Source code view: format for Cov legend */
@@ -3285,7 +3285,7 @@ sub write_css_file()
 	td.lineNoCov,
 	span.lineNoCov
 	{
-	  background-color: #FF6230;
+	  background-color: #e9aeae;
 	}
 	
 	/* Source code view: format for NoCov legend */
@@ -3402,6 +3402,33 @@ sub write_css_file()
 	  padding-right: 10px;
 	  padding-top: 2px;
 	  background-color: #A7FC9D;
+	}
+
+	/* ----------Add for showing differential coverage---------- */
+	.lineChange {                              
+		background: darkgray;
+	}
+	.legend > label {
+		font-weight: 500;
+		min-width: 30px;
+		height: 14px;
+		margin-bottom: -2px;
+		margin-right: 5px;
+		margin-left: 5px;
+		padding: 0;
+	}
+	label {
+		display: inline-block;
+		max-width: 100%;
+	}
+	.legend .cov {
+		background-color: #90EE90;
+	}
+	.legend .uncov {
+		background-color: #f1a899;
+	}
+	.legend .diff, .oper .diff {
+		background-color: #aaaaaa;
 	}
 END_OF_CSS
 	;
@@ -3648,8 +3675,8 @@ sub write_file_table_prolog(*$@)
 	my $width;
 
 	$width = 20 if (scalar(@columns) == 1);
-	$width = 10 if (scalar(@columns) == 2);
-	$width = 8 if (scalar(@columns) > 2);
+	$width = 8 if (scalar(@columns) == 2);
+	$width = 5 if (scalar(@columns) > 2);
 
 	foreach $col (@columns) {
 		my ($heading, $cols) = @{$col};
@@ -3676,6 +3703,15 @@ END_OF_HTML
 END_OF_HTML
 		}
 	}
+	# append header for differential coverage
+	# ----------------- add code ---------------------
+	my ($handle, @content) = @_;
+	write_html($handle, "          <tr>\n");
+	write_html($handle, '<td class="tableHead">&nbsp</td>');
+	write_html($handle, '<td class="tableHead" colspan="7">Full Coverage</td>');
+	write_html($handle, '<td class="tableHead" colspan="7">Differential Coverage</td>');
+	write_html($handle, "          </tr>\n");
+
 	# Next row
 	write_html($handle, <<END_OF_HTML);
 	    </tr>
@@ -3758,6 +3794,35 @@ END_OF_HTML
 	      <td class="coverPer$class">$rate</td>
 	      <td class="coverNum$class">$hit / $found</td>
 END_OF_HTML
+
+# 		# Generate bar graph for differential coverage
+# 		if ($graph) {
+# 			$bar_graph = get_bar_graph_code($base_dir, $found,
+# 							$hit);
+# 			write_html($handle, <<END_OF_HTML);
+# 	      <td class="coverBar" align="center">
+# 	        $bar_graph
+# 	      </td>
+# END_OF_HTML
+# 		}
+# 		# Get rate color and text
+# 		if ($found == 0) {
+# 			$rate = "-";
+# 			$class = "Hi";
+# 		} else {
+# 			$rate = rate($hit, $found, "&nbsp;%");
+# 			$class = $rate_name[classify_rate($found, $hit,
+# 					    $med, $hi)];
+# 		}
+# 		if ($opt_missed) {
+# 			# Show negative number of items without coverage
+# 			$hit = -($found - $hit);
+# 		}
+# 		write_html($handle, <<END_OF_HTML);
+# 	      <td class="coverPer$class">$rate</td>
+# 	      <td class="coverNum$class">$hit / $found</td>
+# END_OF_HTML
+		
 	}
 	# End of row
         write_html($handle, <<END_OF_HTML);
@@ -4210,10 +4275,21 @@ sub write_source_line(*$$$$$)
 
 	# *************************************************************
 
+	# $html = $anchor_start;
+	# $html .= "<span class=\"lineNum\">".sprintf("%8d", $line)." </span>";
+	# $html .= shift(@br_html).":" if ($br_coverage);
+	# $html .= "$source_format$count_format : ";
+	# $html .= escape_html($source);
+	# $html .= "</span>" if ($source_format);
+	# $html .= $anchor_end."\n";
+
 	$html = $anchor_start;
 	$html .= "<span class=\"lineNum\">".sprintf("%8d", $line)." </span>";
 	$html .= shift(@br_html).":" if ($br_coverage);
-	$html .= "$source_format$count_format : ";
+	$html .= "$source_format$count_format";
+	$html .=  "</span>" if ($source_format);
+	$html .= ":";
+	$html .= '<span id="sourceCode">' if ($source_format);
 	$html .= escape_html($source);
 	$html .= "</span>" if ($source_format);
 	$html .= $anchor_end."\n";
@@ -4593,9 +4669,13 @@ END_OF_HTML
 		push(@row_right, [[ "55%" ]]);
 	} else {
 		push(@row_right, [["15%", undef, undef ],
-				  ["10%", "headerCovTableHead", "Hit" ],
-				  ["10%", "headerCovTableHead", "Total" ],
-				  ["15%", "headerCovTableHead", "Coverage"]]);
+				  ["5%", "headerCovTableHead", "Hit" ],
+				  ["5%", "headerCovTableHead", "Total" ],
+				  ["7%", "headerCovTableHead", "Coverage"],
+				  ["5%", "headerCovTableHead", "Hit" ],
+				  ["5%", "headerCovTableHead", "Total" ],
+				  ["7%", "headerCovTableHead", "Coverage"],
+				  ]);
 	}
 	# Line coverage
 	$style = $rate_name[classify_rate($lines_found, $lines_hit,
@@ -4604,7 +4684,10 @@ END_OF_HTML
 	push(@row_right, [[undef, "headerItem", "Lines:"],
 			  [undef, "headerCovTableEntry", $lines_hit],
 			  [undef, "headerCovTableEntry", $lines_found],
-			  [undef, "headerCovTableEntry$style", $rate]])
+			  [undef, "headerCovTableEntry$style", $rate],
+			  [undef, "headerCovTableEntry", "-"],
+			  [undef, "headerCovTableEntry", "-"],
+			  [undef, "headerCovTableEntry$style", "-"],])
 			if ($type != $HDR_TESTDESC);
 	# Function coverage
 	if ($func_coverage) {
@@ -4614,7 +4697,11 @@ END_OF_HTML
 		push(@row_right, [[undef, "headerItem", "Functions:"],
 				  [undef, "headerCovTableEntry", $fn_hit],
 				  [undef, "headerCovTableEntry", $fn_found],
-				  [undef, "headerCovTableEntry$style", $rate]])
+				  [undef, "headerCovTableEntry$style", $rate],
+				  [undef, "headerCovTableEntry", "-"],
+				  [undef, "headerCovTableEntry", "-"],
+				  [undef, "headerCovTableEntry$style", "-"]
+				  ])
 			if ($type != $HDR_TESTDESC);
 	}
 	# Branch coverage
@@ -4625,10 +4712,25 @@ END_OF_HTML
 		push(@row_right, [[undef, "headerItem", "Branches:"],
 				  [undef, "headerCovTableEntry", $br_hit],
 				  [undef, "headerCovTableEntry", $br_found],
-				  [undef, "headerCovTableEntry$style", $rate]])
+				  [undef, "headerCovTableEntry$style", $rate],
+				  [undef, "headerCovTableEntry", "-"],
+				  [undef, "headerCovTableEntry", "-"],
+				  [undef, "headerCovTableEntry$style", "-"]])
 			if ($type != $HDR_TESTDESC);
 	}
 
+
+	# append header for cov
+	# ----------------- add code ---------------------
+	my ($handle, @content) = @_;
+	write_html($handle, "          <tr>\n");
+	write_html($handle, '<td width="10%">&nbsp</td>');
+	write_html($handle, '<td width="35%">&nbsp</td>');
+	write_html($handle, '<td width="5%">&nbsp</td>');
+	write_html($handle, '<td width="15%">&nbsp</td>');
+	write_html($handle, '<td width="17%" class="headerCovTableHead" colspan="3">Full Coverage</td>');
+	write_html($handle, '<td width="17%" class="headerCovTableHead" colspan="3">Differential Coverage</td>');
+	write_html($handle, "          </tr>\n");
 	# Print rows
 	$num_rows = max(scalar(@row_left), scalar(@row_right));
 	for ($i = 0; $i < $num_rows; $i++) {
@@ -4918,7 +5020,12 @@ sub write_file_table(*$$$$$$$)
 	push(@head_columns, [ $line_code, 3 ]);
 	push(@head_columns, [ $func_code, 2]) if ($func_coverage);
 	push(@head_columns, [ $br_code, 2]) if ($br_coverage);
-
+	# differential coverage
+	# ----------------------- new add ----------------------
+	push(@head_columns, [ $line_code, 3 ]);
+	push(@head_columns, [ $func_code, 2]) if ($func_coverage);
+	push(@head_columns, [ $br_code, 2]) if ($br_coverage);
+	# ----------------------- new add ----------------------
 	write_file_table_prolog(*HTML_HANDLE, $file_code, @head_columns);
 
 	foreach $filename (get_sorted_keys($overview, $sort_type))
@@ -4939,6 +5046,20 @@ sub write_file_table(*$$$$$$$)
 			push(@columns, [$br_found, $br_hit, $br_med_limit,
 					$br_hi_limit, 0]);
 		}
+		# ----------------------- new add ----------------------
+		# Line coverage
+		push(@columns, [0, 0, $med_limit, $hi_limit, 1]);
+		# Function coverage
+		if ($func_coverage) {
+			push(@columns, [0, 0, $fn_med_limit,
+					$fn_hi_limit, 0]);
+		}
+		# Branch coverage
+		if ($br_coverage) {
+			push(@columns, [0, 0, $br_med_limit,
+					$br_hi_limit, 0]);
+		}
+		# ----------------------- new add ----------------------
 		write_file_table_entry(*HTML_HANDLE, $base_dir, $filename,
 				       $page_link, @columns);
 
@@ -5116,6 +5237,7 @@ sub get_hash_reverse($)
 
 sub write_source($$$$$$$)
 {
+
 	local *HTML_HANDLE = $_[0];
 	local *SOURCE_HANDLE;
 	my $source_filename = $_[1];
@@ -5159,7 +5281,18 @@ sub write_source($$$$$$$)
 	} else {
 		@file = <SOURCE_HANDLE>;
 	}
-	
+
+	# add legend 
+	my ($handle, @content) = @_;
+	write_html($handle, "          <div>\n");
+	write_html($handle, "<h5>Legend：");
+	write_html($handle, '<span class="legend noselect">');
+	write_html($handle, '<label class="cov"></label>Covered');
+	write_html($handle, '<label class="uncov"></label>Uncovered');
+	write_html($handle, '<label class="diff"></label>Changed');
+	write_html($handle, "</span>");	
+	write_html($handle, "</h5>");
+	write_html($handle, "          </div>\n");
 	write_source_prolog(*HTML_HANDLE);
 	$line_number = 0;
 	foreach (@file) {
