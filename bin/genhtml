@@ -3795,33 +3795,6 @@ END_OF_HTML
 	      <td class="coverNum$class">$hit / $found</td>
 END_OF_HTML
 
-# 		# Generate bar graph for differential coverage
-# 		if ($graph) {
-# 			$bar_graph = get_bar_graph_code($base_dir, $found,
-# 							$hit);
-# 			write_html($handle, <<END_OF_HTML);
-# 	      <td class="coverBar" align="center">
-# 	        $bar_graph
-# 	      </td>
-# END_OF_HTML
-# 		}
-# 		# Get rate color and text
-# 		if ($found == 0) {
-# 			$rate = "-";
-# 			$class = "Hi";
-# 		} else {
-# 			$rate = rate($hit, $found, "&nbsp;%");
-# 			$class = $rate_name[classify_rate($found, $hit,
-# 					    $med, $hi)];
-# 		}
-# 		if ($opt_missed) {
-# 			# Show negative number of items without coverage
-# 			$hit = -($found - $hit);
-# 		}
-# 		write_html($handle, <<END_OF_HTML);
-# 	      <td class="coverPer$class">$rate</td>
-# 	      <td class="coverNum$class">$hit / $found</td>
-# END_OF_HTML
 		
 	}
 	# End of row
@@ -4274,14 +4247,6 @@ sub write_source_line(*$$$$$)
 
 
 	# *************************************************************
-
-	# $html = $anchor_start;
-	# $html .= "<span class=\"lineNum\">".sprintf("%8d", $line)." </span>";
-	# $html .= shift(@br_html).":" if ($br_coverage);
-	# $html .= "$source_format$count_format : ";
-	# $html .= escape_html($source);
-	# $html .= "</span>" if ($source_format);
-	# $html .= $anchor_end."\n";
 
 	$html = $anchor_start;
 	$html .= "<span class=\"lineNum\">".sprintf("%8d", $line)." </span>";
