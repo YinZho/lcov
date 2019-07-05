@@ -196,7 +196,7 @@ sub read_config($);
 sub apply_config($);
 sub get_html_prolog($);
 sub get_html_epilog($);
-sub write_dir_page($$$$$$$$$$$$$$$$$);
+sub write_dir_page($$$$$$$$$$$$$$$$$$$$$$$$);
 sub classify_rate($$$$);
 sub combine_brcount($$$;$);
 sub get_br_found_and_hit($);
@@ -214,19 +214,19 @@ sub get_bar_graph_code($$$);
 sub write_png_files();
 sub write_htaccess_file();
 sub write_css_file();
-sub write_description_file($$$$$$$);
+sub write_description_file($$$$$$$$$$$$$);
 sub write_function_table(*$$$$$$$$$$);
 
 sub write_html(*$);
 sub write_html_prolog(*$$);
 sub write_html_epilog(*$;$);
 
-sub write_header(*$$$$$$$$$$);
+sub write_header(*$$$$$$$$$$$$$$$$);
 sub write_header_prolog(*$);
 sub write_header_line(*@);
 sub write_header_epilog(*$);
 
-sub write_file_table(*$$$$$$$);
+sub write_file_table(*$$$$$$$$);
 sub write_file_table_prolog(*$@);
 sub write_file_table_entry(*$$$@);
 sub write_file_table_detail_entry(*$@);
@@ -251,12 +251,14 @@ sub gen_png($$$@);
 
 # Global variables & initialization
 our %info_data;		# Hash containing all data from .info file
+our %diff_info_data;
 our @opt_dir_prefix;	# Array of prefixes to remove from all sub directories
 our @dir_prefix;
 our %test_description;	# Hash containing test descriptions if available
 our $date = get_date_string();
 
 our @info_filenames;	# List of .info files to use as data source
+our @diff_info_filenames='diff_coverage.info';
 our $test_title;	# Title for output as written to each page header
 our $output_directory;	# Name of directory in which to store output
 our $base_filename;	# Optional name of file containing baseline data
@@ -680,10 +682,11 @@ sub get_overall_line($$$$)
 # Print overall coverage rates for the specified coverage types.
 #
 
-sub print_overall_rate($$$$$$$$$)
+sub print_overall_rate($$$$$$$$$$$$$$$)
 {
 	my ($ln_do, $ln_found, $ln_hit, $fn_do, $fn_found, $fn_hit,
-	    $br_do, $br_found, $br_hit) = @_;
+	    $br_do, $br_found, $br_hit, $diff_ln_found, $diff_ln_hit, $diff_fn_found, $diff_fn_hit,
+	    $diff_br_found, $diff_br_hit) = @_;
 
 	info("Overall coverage rate:\n");
 	info("  lines......: %s\n",
@@ -694,6 +697,15 @@ sub print_overall_rate($$$$$$$$$)
 		if ($fn_do);
 	info("  branches...: %s\n",
 	     get_overall_line($br_found, $br_hit, "branch", "branches"))
+		if ($br_do);
+	info("  diff lines......: %s\n",
+	     get_overall_line($diff_ln_found, $diff_ln_hit, "diff line", "diff lines"))
+		if ($ln_do);
+	info("  diff functions..: %s\n",
+	     get_overall_line($diff_fn_found, $diff_fn_hit, "diff function", "diff functions"))
+		if ($fn_do);
+	info("  diff branches...: %s\n",
+	     get_overall_line($diff_br_found, $diff_br_hit, "diff branch", "diff branches"))
 		if ($br_do);
 }
 
@@ -841,16 +853,38 @@ sub gen_html()
 	my @dir_list;
 	my %new_info;
 
+	my %diff_overview;
+	my $diff_lines_found;
+	my $diff_lines_hit;
+	my $diff_fn_found;
+	my $diff_fn_hit;
+	my $diff_br_found;
+	my $diff_br_hit;
+	my $diff_overall_found = 0;
+	my $diff_overall_hit = 0;
+	my $diff_total_fn_found = 0;
+	my $diff_total_fn_hit = 0;
+	my $diff_total_br_found = 0;
+	my $diff_total_br_hit = 0;
+	my %diff_new_info;
+
 	# Read in all specified .info files
 	foreach (@info_filenames)
 	{
 		%new_info = %{read_info_file($_)};
-
 		# Combine %new_info with %info_data
 		%info_data = %{combine_info_files(\%info_data, \%new_info)};
 	}
 
+	foreach (@diff_info_filenames)
+	{
+		%diff_new_info = %{read_info_file($_)};
+		# Combine %new_info with %info_data
+		%diff_info_data = %{combine_info_files(\%diff_info_data, \%diff_new_info)};
+	}
+
 	info("Found %d entries.\n", scalar(keys(%info_data)));
+	info("Found %d entries.\n", scalar(keys(%diff_info_data)));
 
 	# Read and apply baseline data if specified
 	if ($base_filename)
@@ -863,6 +897,7 @@ sub gen_html()
 		# Apply baseline
 		info("Subtracting baseline data.\n");
 		%info_data = %{apply_baseline(\%info_data, \%base_data)};
+		%diff_info_data = %{apply_baseline(\%diff_info_data, \%base_data)};
 	}
 
 	@dir_list = get_dir_list(keys(%info_data));
@@ -940,7 +975,8 @@ sub gen_html()
 	foreach $dir_name (@dir_list)
 	{
 		($lines_found, $lines_hit, $fn_found, $fn_hit,
-		 $br_found, $br_hit)
+		 $br_found, $br_hit, $diff_lines_found, $diff_lines_hit, $diff_fn_found, $diff_fn_hit,
+		 $diff_br_found, $diff_br_hit)
 			= process_dir($dir_name);
 
 		# Handle files in root directory gracefully
@@ -974,6 +1010,18 @@ sub gen_html()
 		$total_fn_hit	+= $fn_hit;
 		$total_br_found	+= $br_found;
 		$total_br_hit	+= $br_hit;
+
+		$diff_overview{$dir_name} = [$diff_lines_found, $diff_lines_hit, $diff_fn_found,
+					$diff_fn_hit, $diff_br_found, $diff_br_hit, $link_name,
+					get_rate($diff_lines_found, $diff_lines_hit),
+					get_rate($diff_fn_found, $diff_fn_hit),
+					get_rate($diff_br_found, $diff_br_hit)];
+		$diff_overall_found	+= $diff_lines_found;
+		$diff_overall_hit	+= $diff_lines_hit;
+		$total_fn_found	+= $fn_found;
+		$total_fn_hit	+= $fn_hit;
+		$total_br_found	+= $br_found;
+		$total_br_hit	+= $br_hit;
 	}
 
 	# Generate overview page
@@ -984,7 +1032,9 @@ sub gen_html()
 		write_dir_page($fileview_sortname[$_], ".", "", $test_title,
 			       undef, $overall_found, $overall_hit,
 			       $total_fn_found, $total_fn_hit, $total_br_found,
-			       $total_br_hit, \%overview, {}, {}, {}, 0, $_);
+			       $total_br_hit, $diff_overall_found, $diff_overall_hit,
+			       $diff_total_fn_found, $diff_total_fn_hit, $diff_total_br_found,
+			       $diff_total_br_hit, \%overview, \%diff_overview, {}, {}, {}, 0, $_);
 	}
 
 	# Check if there are any test case descriptions to write out
@@ -994,12 +1044,18 @@ sub gen_html()
 		write_description_file( \%test_description,
 					$overall_found, $overall_hit,
 					$total_fn_found, $total_fn_hit,
-					$total_br_found, $total_br_hit);
+					$total_br_found, $total_br_hit, 
+					$diff_overall_found, $diff_overall_hit,
+					$diff_total_fn_found, $diff_total_fn_hit,
+					$diff_total_br_found, $diff_total_br_hit);
 	}
 
 	print_overall_rate(1, $overall_found, $overall_hit,
 			   $func_coverage, $total_fn_found, $total_fn_hit,
-			   $br_coverage, $total_br_found, $total_br_hit);
+			   $br_coverage, $total_br_found, $total_br_hit,
+			   $diff_overall_found, $diff_overall_hit,
+			   $diff_total_fn_found, $diff_total_fn_hit,
+			   $diff_total_br_found, $diff_total_br_hit);
 
 	chdir($cwd);
 }
@@ -1026,11 +1082,13 @@ sub html_create($$)
 	}
 }
 
-sub write_dir_page($$$$$$$$$$$$$$$$$)
+sub write_dir_page($$$$$$$$$$$$$$$$$$$$$$$$)
 {
 	my ($name, $rel_dir, $base_dir, $title, $trunc_dir, $overall_found,
 	    $overall_hit, $total_fn_found, $total_fn_hit, $total_br_found,
-	    $total_br_hit, $overview, $testhash, $testfnchash, $testbrhash,
+	    $total_br_hit, $diff_overall_found,
+	    $diff_overall_hit, $diff_total_fn_found, $diff_total_fn_hit, $diff_total_br_found,
+	    $diff_total_br_hit, $overview, $diff_overview, $testhash, $testfnchash, $testbrhash,
 	    $view_type, $sort_type) = @_;
 
 	# Generate directory overview page including details
@@ -1042,8 +1100,10 @@ sub write_dir_page($$$$$$$$$$$$$$$$$)
 	write_html_prolog(*HTML_HANDLE, $base_dir, "LCOV - $title$trunc_dir");
 	write_header(*HTML_HANDLE, $view_type, $trunc_dir, $rel_dir,
 		     $overall_found, $overall_hit, $total_fn_found,
-		     $total_fn_hit, $total_br_found, $total_br_hit, $sort_type);
-	write_file_table(*HTML_HANDLE, $base_dir, $overview, $testhash,
+		     $total_fn_hit, $total_br_found, $total_br_hit,
+			 $diff_overall_found, $diff_overall_hit, $diff_total_fn_found,
+		     $diff_total_fn_hit, $diff_total_br_found, $diff_total_br_hit, $sort_type);
+	write_file_table(*HTML_HANDLE, $base_dir, $overview, $diff_overview, $testhash,
 			 $testfnchash, $testbrhash, $view_type, $sort_type);
 	write_html_epilog(*HTML_HANDLE, $base_dir);
 	close(*HTML_HANDLE);
@@ -1084,7 +1144,28 @@ sub process_dir($)
 	my %testbrhash;
 	my @sort_list;
 	local *HTML_HANDLE;
-
+	# ----------------- add code ---------------------
+	my $diff_filename;
+	my %diff_overview;
+	my $diff_lines_found;
+	my $diff_lines_hit;
+	my $diff_fn_found;
+	my $diff_fn_hit;
+	my $diff_br_found;
+	my $diff_br_hit;
+	my $diff_overall_found=0;
+	my $diff_overall_hit=0;
+	my $diff_total_fn_found=0;
+	my $diff_total_fn_hit=0;
+	my $diff_total_br_found = 0;
+	my $diff_total_br_hit = 0;
+	my $diff_testdata;
+	my %diff_testhash;
+	my $diff_testfncdata;
+	my %diff_testfnchash;
+	my $diff_testbrdata;
+	my %diff_testbrhash;
+	# ----------------- add code ---------------------
 	# Remove prefix if applicable
 	if (!$no_prefix)
 	{
@@ -1116,7 +1197,10 @@ sub process_dir($)
 		my $func_link;
 
 		($lines_found, $lines_hit, $fn_found, $fn_hit, $br_found,
-		 $br_hit, $testdata, $testfncdata, $testbrdata) =
+		 $br_hit,
+		 $diff_lines_found, $diff_lines_hit, $diff_fn_found, $diff_fn_hit, $diff_br_found,
+		 $diff_br_hit,
+		 $testdata, $testfncdata, $testbrdata) =
 			process_file($trunc_dir, $rel_dir, $filename);
 
 		$base_name = basename($filename);
@@ -1136,6 +1220,14 @@ sub process_dir($)
 					 get_rate($lines_found, $lines_hit),
 					 get_rate($fn_found, $fn_hit),
 					 get_rate($br_found, $br_hit)];
+		# ----------------- add code ---------------------
+		$diff_overview{$base_name} = [$diff_lines_found, $diff_lines_hit, $diff_fn_found,
+				$diff_fn_hit, $diff_br_found, $diff_br_hit,
+				$page_link,
+				get_rate($diff_lines_found, $diff_lines_hit),
+				get_rate($diff_fn_found, $diff_fn_hit),
+				get_rate($diff_br_found, $diff_br_hit)];
+		# ----------------- add code ---------------------
 
 		$testhash{$base_name} = $testdata;
 		$testfnchash{$base_name} = $testfncdata;
@@ -1149,6 +1241,20 @@ sub process_dir($)
 
 		$total_br_found += $br_found;
 		$total_br_hit   += $br_hit;
+		# ----------------- add code ---------------------
+		$diff_testhash{$base_name} = $diff_testdata;
+		$diff_testfnchash{$base_name} = $diff_testfncdata;
+		$diff_testbrhash{$base_name} = $diff_testbrdata;
+
+		$diff_overall_found	+= $diff_lines_found;
+		$diff_overall_hit	+= $diff_lines_hit;
+
+		$diff_total_fn_found += $diff_fn_found;
+		$diff_total_fn_hit   += $diff_fn_hit;
+
+		$diff_total_br_found += $diff_br_found;
+		$diff_total_br_hit   += $diff_br_hit;
+		# ----------------- add code ---------------------
 	}
 
 	# Create sorted pages
@@ -1157,7 +1263,9 @@ sub process_dir($)
 		write_dir_page($fileview_sortname[$_], $rel_dir, $base_dir,
 			       $test_title, $trunc_dir, $overall_found,
 			       $overall_hit, $total_fn_found, $total_fn_hit,
-			       $total_br_found, $total_br_hit, \%overview, {},
+			       $total_br_found, $total_br_hit, $diff_overall_found,
+			       $diff_overall_hit, $diff_total_fn_found, $diff_total_fn_hit,
+			       $diff_total_br_found, $diff_total_br_hit, \%overview, \%diff_overview, {},
 			       {}, {}, 1, $_);
 		if (!$show_details) {
 			next;
@@ -1167,13 +1275,17 @@ sub process_dir($)
 			       $base_dir, $test_title, $trunc_dir,
 			       $overall_found, $overall_hit, $total_fn_found,
 			       $total_fn_hit, $total_br_found, $total_br_hit,
-			       \%overview, \%testhash, \%testfnchash,
+				   $diff_overall_found,
+			       $diff_overall_hit, $diff_total_fn_found, $diff_total_fn_hit,
+			       $diff_total_br_found, $diff_total_br_hit,
+			       \%overview, \%diff_overview, \%testhash, \%testfnchash,
 			       \%testbrhash, 1, $_);
 	}
 
 	# Calculate resulting line counts
 	return ($overall_found, $overall_hit, $total_fn_found, $total_fn_hit,
-		$total_br_found, $total_br_hit);
+		$total_br_found, $total_br_hit, $diff_overall_found, $diff_overall_hit, $diff_total_fn_found, $diff_total_fn_hit,
+		$diff_total_br_found, $diff_total_br_hit);
 }
 
 
@@ -1234,10 +1346,11 @@ sub get_converted_lines($)
 }
 
 
-sub write_function_page($$$$$$$$$$$$$$$$$$)
+sub write_function_page($$$$$$$$$$$$$$$$$$$$$$$$)
 {
 	my ($base_dir, $rel_dir, $trunc_dir, $base_name, $title,
 	    $lines_found, $lines_hit, $fn_found, $fn_hit, $br_found, $br_hit,
+		$diff_lines_found, $diff_lines_hit, $diff_fn_found, $diff_fn_hit, $diff_br_found, $diff_br_hit,
 	    $sumcount, $funcdata, $sumfnccount, $testfncdata, $sumbrcount,
 	    $testbrdata, $sort_type) = @_;
 	my $pagetitle;
@@ -1254,7 +1367,9 @@ sub write_function_page($$$$$$$$$$$$$$$$$$)
 	write_html_prolog(*HTML_HANDLE, $base_dir, $pagetitle);
 	write_header(*HTML_HANDLE, 4, "$trunc_dir/$base_name",
 		     "$rel_dir/$base_name", $lines_found, $lines_hit,
-		     $fn_found, $fn_hit, $br_found, $br_hit, $sort_type);
+		     $fn_found, $fn_hit, $br_found, $br_hit,
+			  $diff_lines_found, $diff_lines_hit,
+		     $diff_fn_found, $diff_fn_hit, $diff_br_found, $diff_br_hit, $sort_type);
 	write_function_table(*HTML_HANDLE, "$base_name.gcov.$html_ext",
 			     $sumcount, $funcdata,
 			     $sumfnccount, $testfncdata, $sumbrcount,
@@ -1297,11 +1412,33 @@ sub process_file($$$)
 	my @source;
 	my $pagetitle;
 	local *HTML_HANDLE;
+	# ----------------- add code ---------------------
+	my $diff_testdata;
+	my $diff_testcount;
+	my $diff_sumcount;
+	my $diff_funcdata;
+	my $diff_checkdata;
+	my $diff_testfncdata;
+	my $diff_sumfnccount;
+	my $diff_testbrdata;
+	my $diff_sumbrcount;
+	my $diff_lines_found;
+	my $diff_lines_hit;
+	my $diff_fn_found;
+	my $diff_fn_hit;
+	my $diff_br_found;
+	my $diff_br_hit;
+	# ----------------- add code ---------------------
 
 	($testdata, $sumcount, $funcdata, $checkdata, $testfncdata,
 	 $sumfnccount, $testbrdata, $sumbrcount, $lines_found, $lines_hit,
 	 $fn_found, $fn_hit, $br_found, $br_hit)
 		= get_info_entry($info_data{$filename});
+
+	($diff_testdata, $diff_sumcount, $diff_funcdata, $diff_checkdata, $diff_testfncdata,
+	 $diff_sumfnccount, $diff_testbrdata, $diff_sumbrcount, $diff_lines_found, $diff_lines_hit,
+	 $diff_fn_found, $diff_fn_hit, $diff_br_found, $diff_br_hit)
+		= get_info_entry($diff_info_data{$filename});
 
 	# Return after this point in case user asked us not to generate
 	# source code view
@@ -1319,7 +1456,8 @@ sub process_file($$$)
 	write_html_prolog(*HTML_HANDLE, $base_dir, $pagetitle);
 	write_header(*HTML_HANDLE, 2, "$trunc_dir/$base_name",
 		     "$rel_dir/$base_name", $lines_found, $lines_hit,
-		     $fn_found, $fn_hit, $br_found, $br_hit, 0);
+		     $fn_found, $fn_hit, $br_found, $br_hit,
+			 $diff_lines_found, $diff_lines_hit, $diff_fn_found, $diff_fn_hit, $diff_br_found, $diff_br_hit, 0);
 	@source = write_source(*HTML_HANDLE, $filename, $sumcount, $checkdata,
 			       $converted, $funcdata, $sumbrcount);
 
@@ -1334,6 +1472,9 @@ sub process_file($$$)
 					    $lines_found, $lines_hit,
 					    $fn_found, $fn_hit, $br_found,
 					    $br_hit, $sumcount,
+						$diff_lines_found, $diff_lines_hit,
+					    $diff_fn_found, $diff_fn_hit, $diff_br_found,
+					    $diff_br_hit,
 					    $funcdata, $sumfnccount,
 					    $testfncdata, $sumbrcount,
 					    $testbrdata, $_);
@@ -1344,7 +1485,10 @@ sub process_file($$$)
 	if (!$frames)
 	{
 		return ($lines_found, $lines_hit, $fn_found, $fn_hit,
-			$br_found, $br_hit, $testdata, $testfncdata,
+			$br_found, $br_hit, 
+			$diff_lines_found, $diff_lines_hit, $diff_fn_found, $diff_fn_hit,
+			$diff_br_found, $diff_br_hit,
+			$testdata, $testfncdata,
 			$testbrdata);
 	}
 
@@ -2679,7 +2823,7 @@ sub create_sub_dir($)
 # Die on error.
 #
 
-sub write_description_file($$$$$$$)
+sub write_description_file($$$$$$$$$$$$$)
 {
 	my %description = %{$_[0]};
 	my $found = $_[1];
@@ -2688,13 +2832,21 @@ sub write_description_file($$$$$$$)
 	my $fn_hit = $_[4];
 	my $br_found = $_[5];
 	my $br_hit = $_[6];
+	my $diff_found = $_[7];
+	my $diff_hit = $_[8];
+	my $diff_fn_found = $_[9];
+	my $diff_fn_hit = $_[10];
+	my $diff_br_found = $_[11];
+	my $diff_br_hit = $_[12];
 	my $test_name;
 	local *HTML_HANDLE;
 
 	html_create(*HTML_HANDLE,"descriptions.$html_ext");
 	write_html_prolog(*HTML_HANDLE, "", "LCOV - test case descriptions");
 	write_header(*HTML_HANDLE, 3, "", "", $found, $hit, $fn_found,
-		     $fn_hit, $br_found, $br_hit, 0);
+		     $fn_hit, $br_found, $br_hit,
+			 $diff_found, $diff_hit, $diff_fn_found,
+		     $diff_fn_hit, $diff_br_found, $diff_br_hit, 0);
 
 	write_test_table_prolog(*HTML_HANDLE,
 			 "Test case descriptions - alphabetical list");
@@ -3705,7 +3857,6 @@ END_OF_HTML
 	}
 	# append header for differential coverage
 	# ----------------- add code ---------------------
-	my ($handle, @content) = @_;
 	write_html($handle, "          <tr>\n");
 	write_html($handle, '<td class="tableHead">&nbsp</td>');
 	write_html($handle, '<td class="tableHead" colspan="7">Full Coverage</td>');
@@ -4480,7 +4631,7 @@ sub max($$)
 # header, test case description header, function view header)
 #
 
-sub write_header(*$$$$$$$$$$)
+sub write_header(*$$$$$$$$$$$$$$$$)
 {
 	local *HTML_HANDLE = $_[0];
 	my $type = $_[1];
@@ -4492,13 +4643,21 @@ sub write_header(*$$$$$$$$$$)
 	my $fn_hit = $_[7];
 	my $br_found = $_[8];
 	my $br_hit = $_[9];
-	my $sort_type = $_[10];
+	my $diff_lines_found = $_[10];
+	my $diff_lines_hit = $_[11];
+	my $diff_fn_found = $_[12];
+	my $diff_fn_hit = $_[13];
+	my $diff_br_found = $_[14];
+	my $diff_br_hit = $_[15];
+	my $sort_type = $_[16];
 	my $base_dir;
 	my $view;
 	my $test;
 	my $base_name;
 	my $style;
+	my $diff_style;
 	my $rate;
+	my $diff_rate;
 	my @row_left;
 	my @row_right;
 	my $num_rows;
@@ -4645,27 +4804,33 @@ END_OF_HTML
 	# Line coverage
 	$style = $rate_name[classify_rate($lines_found, $lines_hit,
 					  $med_limit, $hi_limit)];
+	$diff_style = $rate_name[classify_rate($diff_lines_found, $diff_lines_hit,
+					  $med_limit, $hi_limit)];
 	$rate = rate($lines_hit, $lines_found, " %");
+	$diff_rate = rate($diff_lines_hit, $diff_lines_found, " %");
 	push(@row_right, [[undef, "headerItem", "Lines:"],
 			  [undef, "headerCovTableEntry", $lines_hit],
 			  [undef, "headerCovTableEntry", $lines_found],
 			  [undef, "headerCovTableEntry$style", $rate],
-			  [undef, "headerCovTableEntry", "-"],
-			  [undef, "headerCovTableEntry", "-"],
-			  [undef, "headerCovTableEntry$style", "-"],])
+			  [undef, "headerCovTableEntry", $diff_lines_hit],
+			  [undef, "headerCovTableEntry", $diff_lines_found],
+			  [undef, "headerCovTableEntry$diff_style", $diff_rate],])
 			if ($type != $HDR_TESTDESC);
 	# Function coverage
 	if ($func_coverage) {
 		$style = $rate_name[classify_rate($fn_found, $fn_hit,
 						  $fn_med_limit, $fn_hi_limit)];
+		$diff_style = $rate_name[classify_rate($diff_fn_found, $diff_fn_hit,
+					  $med_limit, $hi_limit)];
 		$rate = rate($fn_hit, $fn_found, " %");
+		$diff_rate = rate($diff_fn_hit, $diff_fn_found, " %");
 		push(@row_right, [[undef, "headerItem", "Functions:"],
 				  [undef, "headerCovTableEntry", $fn_hit],
 				  [undef, "headerCovTableEntry", $fn_found],
 				  [undef, "headerCovTableEntry$style", $rate],
-				  [undef, "headerCovTableEntry", "-"],
-				  [undef, "headerCovTableEntry", "-"],
-				  [undef, "headerCovTableEntry$style", "-"]
+				  [undef, "headerCovTableEntry", $diff_fn_hit],
+				  [undef, "headerCovTableEntry", $diff_fn_found],
+				  [undef, "headerCovTableEntry$diff_style", $diff_rate]
 				  ])
 			if ($type != $HDR_TESTDESC);
 	}
@@ -4673,14 +4838,17 @@ END_OF_HTML
 	if ($br_coverage) {
 		$style = $rate_name[classify_rate($br_found, $br_hit,
 						  $br_med_limit, $br_hi_limit)];
+		$diff_style = $rate_name[classify_rate($diff_br_found, $diff_br_hit,
+					  $med_limit, $hi_limit)];
 		$rate = rate($br_hit, $br_found, " %");
+		$diff_rate = rate($diff_br_hit, $diff_br_found, " %");
 		push(@row_right, [[undef, "headerItem", "Branches:"],
 				  [undef, "headerCovTableEntry", $br_hit],
 				  [undef, "headerCovTableEntry", $br_found],
 				  [undef, "headerCovTableEntry$style", $rate],
-				  [undef, "headerCovTableEntry", "-"],
-				  [undef, "headerCovTableEntry", "-"],
-				  [undef, "headerCovTableEntry$style", "-"]])
+				  [undef, "headerCovTableEntry", $diff_br_hit],
+				  [undef, "headerCovTableEntry", $diff_br_found],
+				  [undef, "headerCovTableEntry$diff_style", $diff_rate]])
 			if ($type != $HDR_TESTDESC);
 	}
 
@@ -4911,16 +5079,17 @@ sub get_br_code($$$$)
 # otherwise.
 #
 
-sub write_file_table(*$$$$$$$)
+sub write_file_table(*$$$$$$$$)
 {
 	local *HTML_HANDLE = $_[0];
 	my $base_dir = $_[1];
 	my $overview = $_[2];
-	my $testhash = $_[3];
-	my $testfnchash = $_[4];
-	my $testbrhash = $_[5];
-	my $fileview = $_[6];
-	my $sort_type = $_[7];
+	my $diff_overview = $_[3];
+	my $testhash = $_[4];
+	my $testfnchash = $_[5];
+	my $testbrhash = $_[6];
+	my $fileview = $_[7];
+	my $sort_type = $_[8];
 	my $filename;
 	my $bar_graph;
 	my $hit;
@@ -4940,6 +5109,13 @@ sub write_file_table(*$$$$$$$)
 	my $br_code;
 	my $file_code;
 	my @head_columns;
+
+	my $diff_hit;
+	my $diff_found;
+	my $diff_fn_found;
+	my $diff_fn_hit;
+	my $diff_br_found;
+	my $diff_br_hit;
 
 	# Determine HTML code for column headings
 	if (($base_dir ne "") && $show_details)
@@ -4998,6 +5174,8 @@ sub write_file_table(*$$$$$$$)
 		my @columns;
 		($found, $hit, $fn_found, $fn_hit, $br_found, $br_hit,
 		 $page_link) = @{$overview->{$filename}};
+		($diff_found, $diff_hit, $diff_fn_found, $diff_fn_hit, $diff_br_found, $diff_br_hit,
+		 $page_link) = @{$diff_overview->{$filename}};
 
 		# Line coverage
 		push(@columns, [$found, $hit, $med_limit, $hi_limit, 1]);
@@ -5013,15 +5191,15 @@ sub write_file_table(*$$$$$$$)
 		}
 		# ----------------------- new add ----------------------
 		# Line coverage
-		push(@columns, [0, 0, $med_limit, $hi_limit, 1]);
+		push(@columns, [$diff_found, $diff_hit, $med_limit, $hi_limit, 1]);
 		# Function coverage
 		if ($func_coverage) {
-			push(@columns, [0, 0, $fn_med_limit,
+			push(@columns, [$diff_fn_found, $diff_fn_hit, $fn_med_limit,
 					$fn_hi_limit, 0]);
 		}
 		# Branch coverage
 		if ($br_coverage) {
-			push(@columns, [0, 0, $br_med_limit,
+			push(@columns, [$diff_br_found, $diff_br_hit, $br_med_limit,
 					$br_hi_limit, 0]);
 		}
 		# ----------------------- new add ----------------------
@@ -5060,6 +5238,9 @@ sub write_file_table(*$$$$$$$)
 			push(@results, [$found, $hit]);
 			push(@results, [$fn_found, $fn_hit]) if ($func_coverage);
 			push(@results, [$br_found, $br_hit]) if ($br_coverage);
+			push(@results, [$diff_found, $diff_hit]);
+			push(@results, [$diff_fn_found, $diff_fn_hit]) if ($func_coverage);
+			push(@results, [$diff_br_found, $diff_br_hit]) if ($br_coverage);
 			write_file_table_detail_entry(*HTML_HANDLE, $testname,
 				@results);
 		}
