@@ -65,7 +65,7 @@
 #
 
 use strict;
-use warnings;
+# use warnings;
 use File::Basename;
 use File::Temp qw(tempfile);
 use Getopt::Long;
@@ -258,7 +258,7 @@ our %test_description;	# Hash containing test descriptions if available
 our $date = get_date_string();
 
 our @info_filenames;	# List of .info files to use as data source
-our @diff_info_filenames='diff_coverage.info';
+our @diff_info_filenames;
 our $test_title;	# Title for output as written to each page header
 our $output_directory;	# Name of directory in which to store output
 our $base_filename;	# Optional name of file containing baseline data
@@ -448,7 +448,8 @@ if (!GetOptions("output-directory|o=s"	=> \$output_directory,
 	}
 }
 
-@info_filenames = @ARGV;
+@info_filenames = @ARGV[0];
+@diff_info_filenames = @ARGV[1];
 
 # Check for help option
 if ($help)
@@ -1874,7 +1875,7 @@ sub read_info_file($)
 
 	if (scalar(keys(%result)) == 0)
 	{
-		die("ERROR: no valid records found in tracefile $tracefile\n");
+		# die("ERROR: no valid records found in tracefile $tracefile\n");
 	}
 	if ($negative)
 	{
